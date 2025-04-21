@@ -1,0 +1,371 @@
+<!-- templates/bus_device.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Device - Bus Tracking System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <style>
+        :root {
+            --primary-color: #8BC34A;
+            --secondary-color: #689F38;
+            --accent-color: #DCEDC8;
+        }
+        body {
+            background-color: #f8fbf4;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--secondary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+        .bg-primary {
+            background-color: var(--primary-color) !important;
+        }
+        .bg-secondary {
+            background-color: var(--secondary-color) !important;
+        }
+        .bg-accent {
+            background-color: var(--accent-color) !important;
+        }
+        #map {
+            height: 300px;
+            width: 100%;
+        }
+        .status-active {
+            color: var(--primary-color);
+        }
+        .status-inactive {
+            color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <nav class="bg-secondary text-white p-4">
+        <div class="container">
+            <div class="flex justify-between items-center">
+                <div class="text-xl font-bold"><i class="fas fa-bus mr-2"></i>Bus Tracking System</div>
+                <a href="/" class="text-white"><i class="fas fa-home mr-1"></i> Home</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card shadow-lg bg-accent">
+                    <div class="card-header bg-primary text-white p-3">
+                        <h3 class="mb-0"><i class="fas fa-mobile-alt mr-2"></i>Bus Device Module</h3>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="alert bg-secondary text-white" role="alert">
+                            <i class="fas fa-info-circle mr-2"></i> This module simulates an ESP32 device on a bus. It will send your location to the server every second.
+                        </div>
+
+                        <div id="setup-form" class="mb-4">
+                            <div class="mb-3">
+                                <label for="busName" class="form-label">Bus Name</label>
+                                <input type="text" class="form-control" id="busName" placeholder="Enter bus name">
+                            </div>
+                            <button id="requestLocation" class="btn btn-primary w-100 mb-3">
+                                <i class="fas fa-location-arrow mr-2"></i>Request Location Permission & Start Tracking
+                            </button>
+                        </div>
+
+                        <div id="tracking-info" class="mb-4 d-none">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h4 class="mb-0">Tracking Active</h4>
+                                <span id="status-indicator" class="badge bg-success"><i class="fas fa-signal mr-1"></i> Connected</span>
+                            </div>
+                            
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <p class="mb-1"><strong>Bus ID:</strong></p>
+                                            <p id="busId" class="text-muted">-</p>
+                                        </div>
+                                        <div class="col-6">
+                                            <p class="mb-1"><strong>Bus Name:</strong></p>
+                                            <p id="currentBusName" class="text-muted">-</p>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-2">
+                                        <div class="col-6">
+                                            <p class="mb-1"><strong>Latitude:</strong></p>
+                                            <p id="currentLat" class="text-muted">-</p>
+                                        </div>
+                                        <div class="col-6">
+                                            <p class="mb-1"><strong>Longitude:</strong></p>
+                                            <p id="currentLng" class="text-muted">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Update Bus Name</h5>
+                                    <div class="input-group">
+                                        <input type="text" id="newBusName" class="form-control" placeholder="New bus name">
+                                        <button id="updateBusName" class="btn btn-primary">Update</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="map" class="rounded mb-3"></div>
+
+                            <button id="stopTracking" class="btn btn-danger w-100">
+                                <i class="fas fa-stop-circle mr-2"></i>Stop Tracking
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-secondary text-white p-4 mt-5">
+        <div class="container text-center">
+            <p>&copy; 2025 Bus Tracking System</p>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script>
+        let map;
+        let marker;
+        let busId = null;
+        let watchId = null;
+        let updateInterval = null;
+
+        document.getElementById('requestLocation').addEventListener('click', () => {
+            const busName = document.getElementById('busName').value.trim();
+            if (!busName) {
+                alert('Please enter a bus name');
+                return;
+            }
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        // Register the bus with the server
+                        registerBus(position.coords.latitude, position.coords.longitude, busName);
+                    },
+                    (error) => {
+                        alert(`Error getting location: ${error.message}`);
+                    }
+                );
+            } else {
+                alert('Geolocation is not supported by this browser');
+            }
+        });
+
+        document.getElementById('updateBusName').addEventListener('click', () => {
+            const newName = document.getElementById('newBusName').value.trim();
+            if (!newName) {
+                alert('Please enter a new bus name');
+                return;
+            }
+
+            updateBusName(newName);
+        });
+
+        document.getElementById('stopTracking').addEventListener('click', () => {
+            stopTracking();
+        });
+
+        function registerBus(latitude, longitude, busName) {
+            fetch('/api/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: busName,
+                    latitude: latitude,
+                    longitude: longitude
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    busId = data.bus_id;
+                    startTracking(busName, latitude, longitude);
+                } else {
+                    alert(`Error: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error registering bus:', error);
+                alert('Failed to register bus. Please try again.');
+            });
+        }
+
+        function updateBusName(newName) {
+            if (!busId) return;
+
+            fetch('/api/update_name', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    bus_id: busId,
+                    name: newName
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('currentBusName').textContent = newName;
+                    document.getElementById('newBusName').value = '';
+                } else {
+                    alert(`Error: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating bus name:', error);
+                alert('Failed to update bus name. Please try again.');
+            });
+        }
+
+        function startTracking(busName, latitude, longitude) {
+            // Show tracking panel
+            document.getElementById('setup-form').classList.add('d-none');
+            document.getElementById('tracking-info').classList.remove('d-none');
+            
+            // Update info
+            document.getElementById('busId').textContent = busId;
+            document.getElementById('currentBusName').textContent = busName;
+            document.getElementById('currentLat').textContent = latitude;
+            document.getElementById('currentLng').textContent = longitude;
+            
+            // Initialize map
+            initMap(latitude, longitude);
+            
+            // Start watching position
+            watchId = navigator.geolocation.watchPosition(
+                updatePosition,
+                (error) => {
+                    console.error('Error watching position:', error);
+                    document.getElementById('status-indicator').className = 'badge bg-danger';
+                    document.getElementById('status-indicator').innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Error';
+                },
+                { enableHighAccuracy: true }
+            );
+            
+            // Send updates to the server every second
+            updateInterval = setInterval(() => {
+                const lat = parseFloat(document.getElementById('currentLat').textContent);
+                const lng = parseFloat(document.getElementById('currentLng').textContent);
+                sendLocationUpdate(lat, lng);
+            }, 1000);
+        }
+
+        function initMap(latitude, longitude) {
+            map = L.map('map').setView([latitude, longitude], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            const busIcon = L.icon({
+                iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                shadowSize: [41, 41]
+            });
+            
+            marker = L.marker([latitude, longitude], { icon: busIcon }).addTo(map)
+                .bindPopup(`<b>${document.getElementById('currentBusName').textContent}</b><br>Bus ID: ${busId}`);
+        }
+
+        function updatePosition(position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            
+            // Update display
+            document.getElementById('currentLat').textContent = latitude;
+            document.getElementById('currentLng').textContent = longitude;
+            
+            // Update map marker
+            if (map && marker) {
+                marker.setLatLng([latitude, longitude]);
+                map.panTo([latitude, longitude]);
+                marker.getPopup().setContent(`<b>${document.getElementById('currentBusName').textContent}</b><br>Bus ID: ${busId}`);
+            }
+            
+            // Update status indicator
+            document.getElementById('status-indicator').className = 'badge bg-success';
+            document.getElementById('status-indicator').innerHTML = '<i class="fas fa-signal mr-1"></i> Connected';
+        }
+
+        function sendLocationUpdate(latitude, longitude) {
+            if (!busId) return;
+            
+            fetch('/api/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    bus_id: busId,
+                    latitude: latitude,
+                    longitude: longitude
+                }),
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status !== 'success') {
+                    console.error('Error updating location:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error sending location update:', error);
+                document.getElementById('status-indicator').className = 'badge bg-warning text-dark';
+                document.getElementById('status-indicator').innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Connection Error';
+            });
+        }
+
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            
+            // Reset UI
+            document.getElementById('setup-form').classList.remove('d-none');
+            document.getElementById('tracking-info').classList.add('d-none');
+            document.getElementById('busName').value = '';
+            
+            // Reset variables
+            busId = null;
+            map = null;
+            marker = null;
+        }
+
+        // Handle page unload to stop tracking
+        window.addEventListener('beforeunload', stopTracking);
+    </script>
+</body>
+</html>

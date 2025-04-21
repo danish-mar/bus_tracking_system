@@ -1,0 +1,321 @@
+<!-- templates/map.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map View - Bus Tracking System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <style>
+        :root {
+            --primary-color: #8BC34A;
+            --secondary-color: #689F38;
+            --accent-color: #DCEDC8;
+        }
+        body {
+            background-color: #f8fbf4;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--secondary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+        .bg-primary {
+            background-color: var(--primary-color) !important;
+        }
+        .bg-secondary {
+            background-color: var(--secondary-color) !important;
+        }
+        .bg-accent {
+            background-color: var(--accent-color) !important;
+        }
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        .bus-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .bus-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .bus-item:hover {
+            background-color: #f0f4e8;
+        }
+        .bus-item.active {
+            background-color: var(--accent-color);
+            border-left: 4px solid var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <nav class="bg-secondary text-white p-4">
+        <div class="container">
+            <div class="flex justify-between items-center">
+                <div class="text-xl font-bold"><i class="fas fa-bus mr-2"></i>Bus Tracking System</div>
+                <a href="/" class="text-white"><i class="fas fa-home mr-1"></i> Home</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="card shadow-lg bg-accent mb-4">
+                    <div class="card-header bg-primary text-white p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h3 class="mb-0"><i class="fas fa-list mr-2"></i>Active Buses</h3>
+                            <span id="bus-count" class="badge bg-white text-primary">0</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="bus-list" class="bus-list list-group list-group-flush">
+                            <div class="text-center p-4 text-muted">
+                                <i class="fas fa-bus fa-3x mb-3"></i>
+                                <p>No buses are currently active</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow-lg bg-accent mb-4">
+                    <div class="card-header bg-primary text-white p-3">
+                        <h3 class="mb-0"><i class="fas fa-info-circle mr-2"></i>Information</h3>
+                    </div>
+                    <div class="card-body">
+                        <p><i class="fas fa-circle text-success mr-2"></i> Active buses are shown in real-time</p>
+                        <p><i class="fas fa-clock mr-2"></i> Buses that don't update for 5 seconds are automatically removed</p>
+                        <p><i class="fas fa-sync mr-2"></i> The map refreshes every second</p>
+                        <p><i class="fas fa-mouse-pointer mr-2"></i> Click on a bus in the list to center the map on it</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-9">
+                <div class="card shadow-lg">
+                    <div class="card-header bg-primary text-white p-3">
+                        <h3 class="mb-0"><i class="fas fa-map-marked-alt mr-2"></i>Live Bus Map</h3>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-secondary text-white p-4 mt-4">
+        <div class="container text-center">
+            <p>&copy; 2025 Bus Tracking System</p>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script>
+        let map;
+        let markers = {};
+        let selectedBusId = null;
+
+        function initMap() {
+            // Initialize map centered at a default location
+            map = L.map('map').setView([0, 0], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Initial fetch of buses
+            fetchBuses();
+            
+            // Set up interval to refresh buses every second
+            setInterval(fetchBuses, 1000);
+        }
+
+        function fetchBuses() {
+            fetch('/api/buses')
+                .then(response => response.json())
+                .then(data => {
+                    updateBusesDisplay(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching buses:', error);
+                });
+        }
+
+        function updateBusesDisplay(busesData) {
+            <!-- Continuing the script in map.html -->
+            const busList = document.getElementById('bus-list');
+            const busCount = document.getElementById('bus-count');
+            const buses = Object.entries(busesData);
+            
+            // Update bus count
+            busCount.textContent = buses.length;
+            
+            // Clear bus list if no buses
+            if (buses.length === 0) {
+                busList.innerHTML = `
+                    <div class="text-center p-4 text-muted">
+                        <i class="fas fa-bus fa-3x mb-3"></i>
+                        <p>No buses are currently active</p>
+                    </div>
+                `;
+                
+                // Clear all markers
+                for (const markerId in markers) {
+                    map.removeLayer(markers[markerId]);
+                    delete markers[markerId];
+                }
+                
+                return;
+            }
+            
+            // If we have buses, clear the "no buses" message
+            if (busList.innerHTML.includes('No buses are currently active')) {
+                busList.innerHTML = '';
+            }
+            
+            // Track existing bus IDs to identify new and removed buses
+            const currentBusIds = new Set();
+            
+            // Update or add buses
+            buses.forEach(([busId, busData]) => {
+                currentBusIds.add(busId);
+                
+                // Update marker on map
+                updateMapMarker(busId, busData);
+                
+                // Update or add bus in list
+                updateBusList(busId, busData);
+            });
+            
+            // Remove buses no longer active
+            const existingItems = busList.querySelectorAll('.bus-item');
+            existingItems.forEach(item => {
+                const itemBusId = item.dataset.busId;
+                if (!currentBusIds.has(itemBusId)) {
+                    item.remove();
+                    
+                    // Remove marker
+                    if (markers[itemBusId]) {
+                        map.removeLayer(markers[itemBusId]);
+                        delete markers[itemBusId];
+                    }
+                }
+            });
+            
+            // Auto-center map if no buses are selected
+            if (!selectedBusId && buses.length > 0) {
+                fitMapToBuses();
+            }
+        }
+        
+        function updateMapMarker(busId, busData) {
+            const lat = parseFloat(busData.latitude);
+            const lng = parseFloat(busData.longitude);
+            
+            // Create custom icon
+            const busIcon = L.icon({
+                iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                shadowSize: [41, 41]
+            });
+            
+            // If marker already exists, update its position
+            if (markers[busId]) {
+                markers[busId].setLatLng([lat, lng]);
+                markers[busId].getPopup().setContent(`
+                    <div class="text-center">
+                        <h5 class="mb-1">${busData.name}</h5>
+                        <p class="mb-1"><strong>Bus ID:</strong> ${busId}</p>
+                        <p class="mb-0"><small>Last updated: ${new Date().toLocaleTimeString()}</small></p>
+                    </div>
+                `);
+            } else {
+                // Create new marker
+                markers[busId] = L.marker([lat, lng], { icon: busIcon }).addTo(map);
+                markers[busId].bindPopup(`
+                    <div class="text-center">
+                        <h5 class="mb-1">${busData.name}</h5>
+                        <p class="mb-1"><strong>Bus ID:</strong> ${busId}</p>
+                        <p class="mb-0"><small>Last updated: ${new Date().toLocaleTimeString()}</small></p>
+                    </div>
+                `);
+            }
+            
+            // If this is the selected bus, keep the map centered on it
+            if (busId === selectedBusId) {
+                map.panTo([lat, lng]);
+            }
+        }
+        
+        function updateBusList(busId, busData) {
+            const busList = document.getElementById('bus-list');
+            let busItem = busList.querySelector(`[data-bus-id="${busId}"]`);
+            
+            // Calculate time since last update
+            const lastUpdateTime = new Date(busData.last_update * 1000);
+            const now = new Date();
+            const timeDiff = Math.round((now - lastUpdateTime) / 1000);
+            
+            // Create or update bus item
+            if (!busItem) {
+                // Create new item
+                busItem = document.createElement('div');
+                busItem.className = 'bus-item list-group-item d-flex align-items-center justify-content-between';
+                busItem.dataset.busId = busId;
+                busList.appendChild(busItem);
+                
+                // Add click event
+                busItem.addEventListener('click', () => {
+                    // Update selected state
+                    document.querySelectorAll('.bus-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    busItem.classList.add('active');
+                    
+                    // Center map on this bus
+                    const marker = markers[busId];
+                    if (marker) {
+                        map.setView(marker.getLatLng(), 15);
+                        marker.openPopup();
+                        selectedBusId = busId;
+                    }
+                });
+            }
+            
+            // Update content
+            busItem.innerHTML = `
+                <div>
+                    <h5 class="mb-1">${busData.name}</h5>
+                    <small class="text-muted">ID: ${busId.substring(0, 8)}...</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-success rounded-pill">${timeDiff}s ago</span>
+                    <i class="fas fa-chevron-right ms-2"></i>
+                </div>
+            `;
+        }
+        
+        function fitMapToBuses() {
+            // If we have markers, fit the map to show all buses
+            if (Object.keys(markers).length > 0) {
+                const group = new L.featureGroup(Object.values(markers));
+                map.fitBounds(group.getBounds().pad(0.2));
+            }
+        }
+        
+        // Initialize map when page loads
+        document.addEventListener('DOMContentLoaded', initMap);
+    </script>
+</body>
+</html>
