@@ -267,7 +267,7 @@
                 const lat = parseFloat(document.getElementById('currentLat').textContent);
                 const lng = parseFloat(document.getElementById('currentLng').textContent);
                 sendLocationUpdate(lat, lng);
-            }, 1000);
+            }, 5000);
         }
 
         function initMap(latitude, longitude) {

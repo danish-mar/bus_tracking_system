@@ -34,7 +34,7 @@ def cleanup_inactive_buses():
         
         for bus_id, bus_data in buses.items():
             last_update = bus_data.get('last_update', 0)
-            if current_time - last_update > 5:  # 5 seconds timeout
+            if current_time - last_update > 10:  # 5 seconds timeout
                 inactive_buses.append(bus_id)
         
         for bus_id in inactive_buses:
